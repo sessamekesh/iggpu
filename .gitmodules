@@ -7,3 +7,6 @@
 [submodule "extern/glfw"]
 	path = extern/glfw
 	url = https://github.com/glfw/glfw
+[submodule "extern/igasync"]
+	path = extern/igasync
+	url = https://github.com/sessamekesh/igasync

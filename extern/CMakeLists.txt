@@ -11,7 +11,7 @@ if (NOT EMSCRIPTEN)
 endif ()
 
 #
-# igasync (WASM-friendly concurrency library)
+# igasync (only on web builds)
 #
 add_subdirectory(igasync)
 
@@ -19,8 +19,6 @@ add_subdirectory(igasync)
 # Dawn (WebGPU impl with Vulkan/DX12/Metal backends) (only on native builds)
 #
 if (NOT EMSCRIPTEN)
-  find_package(Python REQUIRED COMPONENTS Interpreter)
-
   if (NOT EXISTS "${PROJECT_SOURCE_DIR}/extern/dawn/.gclient")
     message(STATUS "Configuring DAWN .gclient file...")
     execute_process(
@@ -39,12 +37,12 @@ if (NOT EMSCRIPTEN)
   #  one to be wrangled should gclient be interrupted, so checking for the
   #  existence of the zlib folder is a decent-ish check for gclient runs.
   # A stamp file might be a better solution, but I'm lazy
-  if (NOT EXISTS "${PROJECT_SOURCE_DIR}/dawn/third_party/vulkan-deps/README.md")
+  if (NOT EXISTS "${PROJECT_SOURCE_DIR}/extern/dawn/third_party/vulkan-deps/README.md")
     message(STATUS "Downloading DAWN dependencies (this may take a while!)")
-    
+
     execute_process(
-        COMMAND ${Python3_EXECUTABLE}
-        "${PROJECT_SOURCE_DIR}/dawn/tools/fetch_dawn_dependencies.py"
+        COMMAND "python" "${PROJECT_SOURCE_DIR}/extern/dawn/tools/fetch_dawn_dependencies.py"
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/extern/dawn"
         RESULT_VARIABLE rsl_dawn_deps_update
     )
     if (NOT ${rsl_dawn_deps_update} EQUAL 0)

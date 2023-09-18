@@ -1,0 +1,7 @@
+#ifndef IGGPU_CONFIG_H
+#define IGGPU_CONFIG_H
+
+#cmakedefine IGGPU_ENABLE_DEFAULT_LOGGING
+#cmakedefine IGGPU_GRAPHICS_DEBUGGING
+
+#endif
