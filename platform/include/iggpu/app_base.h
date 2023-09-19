@@ -40,7 +40,7 @@ struct AppBase {
 #ifdef __EMSCRIPTEN__
   using AppBaseCreateRsl = std::shared_ptr<igasync::Promise<
       std::variant<std::unique_ptr<AppBase>, AppBaseCreateError>>>;
-  static AppBaseCreateRsl Create(const char* canvas_name,
+  static AppBaseCreateRsl Create(std::string canvas_name,
                                  bool prefer_high_power = true);
 #else
   using AppBaseCreateRsl =

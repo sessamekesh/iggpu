@@ -51,7 +51,7 @@ AppBase::~AppBase() {
   glfwTerminate();
 }
 
-AppBase::AppBaseCreateRsl AppBase::Create(const char* canvas_name,
+AppBase::AppBaseCreateRsl AppBase::Create(std::string canvas_name,
                                           bool prefer_high_power) {
   using promise_t = std::variant<std::unique_ptr<AppBase>, AppBaseCreateError>;
 
@@ -62,7 +62,8 @@ AppBase::AppBaseCreateRsl AppBase::Create(const char* canvas_name,
   }
 
   int width, height;
-  auto rsl = emscripten_get_canvas_element_size(canvas_name, &width, &height);
+  auto rsl =
+      emscripten_get_canvas_element_size(canvas_name.c_str(), &width, &height);
   if (rsl != EMSCRIPTEN_RESULT_SUCCESS) {
     return igasync::Promise<promise_t>::Immediate(
         AppBaseCreateError::WindowCreationError);
@@ -82,14 +83,15 @@ AppBase::AppBaseCreateRsl AppBase::Create(const char* canvas_name,
   struct RequestAdapterUserData {
     GLFWwindow* window;
     std::shared_ptr<igasync::Promise<promise_t>> result_promise;
-    const char* canvas_name;
+    std::string canvas_name;
     int width;
     int height;
     wgpu::Instance instance;
   };
   RequestAdapterUserData* request_adapter_user_data =
       new RequestAdapterUserData{
-          window, result_promise, canvas_name, width, height, instance,
+          window, result_promise, std::move(canvas_name),
+          width,  height,         instance,
       };
 
   instance.RequestAdapter(
@@ -127,7 +129,7 @@ AppBase::AppBaseCreateRsl AppBase::Create(const char* canvas_name,
         struct RequestDeviceUserData {
           GLFWwindow* window;
           std::shared_ptr<igasync::Promise<promise_t>> result_promise;
-          const char* canvas_name;
+          std::string canvas_name;
           int width;
           int height;
           wgpu::Instance instance;
@@ -135,8 +137,9 @@ AppBase::AppBaseCreateRsl AppBase::Create(const char* canvas_name,
         };
         RequestDeviceUserData* request_device_user_data =
             new RequestDeviceUserData{
-                ud->window, ud->result_promise, ud->canvas_name, ud->width,
-                ud->height, ud->instance,       adapter,
+                ud->window, ud->result_promise, std::move(ud->canvas_name),
+                ud->width,  ud->height,         ud->instance,
+                adapter,
             };
         delete ud;
 
@@ -166,7 +169,7 @@ AppBase::AppBaseCreateRsl AppBase::Create(const char* canvas_name,
               wgpu::Device device = wgpu::Device::Acquire(raw_device);
 
               wgpu::SurfaceDescriptorFromCanvasHTMLSelector canv_desc = {};
-              canv_desc.selector = ud->canvas_name;
+              canv_desc.selector = ud->canvas_name.c_str();
 
               wgpu::SurfaceDescriptor surface_desc = {};
               surface_desc.nextInChain =
