@@ -1,6 +1,6 @@
 # IGGPU: A utility library for cross-compiling apps using GLFW+Dawn to native and WASM targets
 
-Version 0.1
+Version 0.2
 
 ## Overview
 
