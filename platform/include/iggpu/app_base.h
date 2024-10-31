@@ -21,7 +21,7 @@ enum class AppBaseCreateError {
   WindowCreationError,
   WGPUDeviceCreationFailed,
   WGPUNoSuitableAdapters,
-  WGPUSwapChainCreateFailed,
+  WGPUSurfaceCreateFailed,
 };
 
 struct AppBase {
@@ -32,21 +32,25 @@ struct AppBase {
   AppBase(AppBase&&) = default;
   AppBase& operator=(AppBase&&) = default;
 
-  AppBase(GLFWwindow* window, wgpu::Device device, wgpu::Surface surface,
-          wgpu::Queue queue, wgpu::SwapChain swapChain, uint32_t width,
-          uint32_t height);
+  AppBase(GLFWwindow* window, wgpu::Device device, wgpu::Adapter adapter,
+          wgpu::Surface surface, wgpu::TextureFormat surface_format,
+          wgpu::Queue queue, uint32_t width, uint32_t height);
   ~AppBase();
 
 #ifdef __EMSCRIPTEN__
   using AppBaseCreateRsl = std::shared_ptr<igasync::Promise<
       std::variant<std::unique_ptr<AppBase>, AppBaseCreateError>>>;
-  static AppBaseCreateRsl Create(std::string canvas_name,
-                                 bool prefer_high_power = true);
+  static AppBaseCreateRsl Create(
+      std::string canvas_name,
+      wgpu::TextureFormat preferred_format = wgpu::TextureFormat::BGRA8Unorm,
+      bool prefer_high_power = true);
 #else
   using AppBaseCreateRsl =
       std::variant<std::unique_ptr<AppBase>, AppBaseCreateError>;
-  static AppBaseCreateRsl Create(uint32_t width = 0u, uint32_t height = 0u,
-                                 const char* window_title = "IGGPU App");
+  static AppBaseCreateRsl Create(
+      uint32_t width = 0u, uint32_t height = 0u,
+      wgpu::TextureFormat preferred_format = wgpu::TextureFormat::BGRA8Unorm,
+      const char* window_title = "IGGPU App");
 
  private:
   std::unique_ptr<dawn::native::Instance> instance_;
@@ -54,16 +58,16 @@ struct AppBase {
  public:
   void process_events();
 #endif
-  wgpu::TextureFormat preferred_swap_chain_texture_format() const;
-  void resize_swap_chain(uint32_t width, uint32_t height);
+  void resize_surface(uint32_t width, uint32_t height);
 
  public:
   GLFWwindow* Window;
+  wgpu::Adapter Adapter;
   wgpu::Instance Instance;
   wgpu::Device Device;
   wgpu::Surface Surface;
+  wgpu::TextureFormat SurfaceFormat;
   wgpu::Queue Queue;
-  wgpu::SwapChain SwapChain;
   uint32_t Width;
   uint32_t Height;
 };
@@ -79,8 +83,8 @@ inline constexpr std::string app_base_create_error_text(
       return "WGPUDeviceCreationFailed";
     case AppBaseCreateError::WGPUNoSuitableAdapters:
       return "WGPUNoSuitableAdapters";
-    case AppBaseCreateError::WGPUSwapChainCreateFailed:
-      return "WGPUSwapChainCreateFailed";
+    case AppBaseCreateError::WGPUSurfaceCreateFailed:
+      return "WGPUSurfaceCreateFailed";
     default:
       return "UNKNOWN";
   }

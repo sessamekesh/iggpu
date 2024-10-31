@@ -28,7 +28,7 @@ int main() {
   while (!glfwWindowShouldClose(app_base->Window)) {
     app_base->process_events();
     app.render();
-    app_base->SwapChain.Present();
+    app_base->Surface.Present();
 
     glfwPollEvents();
   }

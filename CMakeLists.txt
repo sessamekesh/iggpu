@@ -43,7 +43,7 @@ if (NOT EMSCRIPTEN)
       glfw dawncpp)
   target_link_libraries(
     iggpu PRIVATE
-      dawn_native dawn_utils dawn_proc dawn_common dawn_glfw)
+      dawn_native dawn_proc dawn_common dawn_glfw)
 endif ()
 
 if (EMSCRIPTEN)

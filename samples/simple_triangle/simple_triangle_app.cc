@@ -50,6 +50,7 @@ bool SimpleTriangleApp::load_app() {
 
     wgpu::DepthStencilState dss{};
     dss.format = wgpu::TextureFormat::Depth24PlusStencil8;
+    dss.depthWriteEnabled = true;
     dss.depthCompare = wgpu::CompareFunction::Always;
 
     wgpu::RenderPipelineDescriptor rpd{};
@@ -97,8 +98,9 @@ void SimpleTriangleApp::render() {
 
   wgpu::Device device = app_base_->Device;
 
-  wgpu::TextureView backbufferView =
-      app_base_->SwapChain.GetCurrentTextureView();
+  wgpu::SurfaceTexture surfacetexture{};
+  app_base_->Surface.GetCurrentTexture(&surfacetexture);
+  wgpu::TextureView backbufferView = surfacetexture.texture.CreateView();
 
   wgpu::RenderPassColorAttachment colorAttachment{};
   colorAttachment.clearValue = {0.f, 0.f, 0.f, 1.f};

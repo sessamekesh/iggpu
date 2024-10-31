@@ -9,7 +9,7 @@
 
 namespace {
 
-void print_wgpu_device_error(WGPUErrorType error_type, const char* message,
+void print_wgpu_device_error(WGPUErrorType error_type, WGPUStringView message,
                              void*) {
   const char* error_type_name = "";
   switch (error_type) {
@@ -30,11 +30,13 @@ void print_wgpu_device_error(WGPUErrorType error_type, const char* message,
       break;
   }
 
-  iggpu::log(iggpu::LogLevel::Error, std::format("[IGGPU] Dawn error - {} - {}",
-                                                 error_type_name, message));
+  iggpu::log(iggpu::LogLevel::Error,
+             std::format("[IGGPU] Dawn error - {} - {}", error_type_name,
+                         std::string_view(message.data, message.length)));
 }
 
-void device_lost_callback(WGPUDeviceLostReason reason, const char* msg, void*) {
+void device_lost_callback(WGPUDevice const* device, WGPUDeviceLostReason reason,
+                          WGPUStringView msg, void*) {
   const char* lost_reason = "";
   switch (reason) {
     case WGPUDeviceLostReason_Destroyed:
@@ -46,7 +48,8 @@ void device_lost_callback(WGPUDeviceLostReason reason, const char* msg, void*) {
   }
 
   auto formatted_string =
-      std::format("[IGGPU] Dawn device lost - {} - {}", lost_reason, msg);
+      std::format("[IGGPU] Dawn device lost - {} - {}", lost_reason,
+                  std::string_view(msg.data, msg.length));
   iggpu::log(iggpu::LogLevel::Error, formatted_string);
 }
 
@@ -55,16 +58,22 @@ void glfw_error(int code, const char* msg) {
              std::format("[IGGPU] GLFW error {}: {}", code, msg));
 }
 
-void device_log_callback(WGPULoggingType type, const char* msg, void*) {
+void device_log_callback(WGPULoggingType type, WGPUStringView msg, void*) {
   switch (type) {
     case WGPULoggingType_Error:
-      iggpu::log(iggpu::LogLevel::Error, std::format("[IGGPU/Dawn] {}", msg));
+      iggpu::log(iggpu::LogLevel::Error,
+                 std::format("[IGGPU/Dawn] {}",
+                             std::string_view(msg.data, msg.length)));
       return;
     case WGPULoggingType_Warning:
-      iggpu::log(iggpu::LogLevel::Warning, std::format("[IGGPU/Dawn] {}", msg));
+      iggpu::log(iggpu::LogLevel::Warning,
+                 std::format("[IGGPU/Dawn] {}",
+                             std::string_view(msg.data, msg.length)));
       return;
     case WGPULoggingType_Info:
-      iggpu::log(iggpu::LogLevel::Info, std::format("[IGGPU/Dawn] {}", msg));
+      iggpu::log(iggpu::LogLevel::Info,
+                 std::format("[IGGPU/Dawn] {}",
+                             std::string_view(msg.data, msg.length)));
       return;
     default:  // Do not log verbose messages (by default)
       return;
@@ -93,14 +102,14 @@ dawn::native::Adapter get_adapter(
        preferred_type_idx++) {
     for (int i = 0; i < adapters.size(); i++) {
       const auto& adapter = adapters[i];
-      wgpu::AdapterProperties properties{};
-      adapter.GetProperties(&properties);
+      wgpu::AdapterInfo adapterInfo{};
+      adapter.GetInfo(&adapterInfo);
 
       for (int backend_type_idx = 0;
            backend_type_idx < std::size(backend_type_order);
            backend_type_idx++) {
-        if (properties.backendType == backend_type_order[backend_type_idx] &&
-            properties.adapterType == adapter_type_order[preferred_type_idx]) {
+        if (adapterInfo.backendType == backend_type_order[backend_type_idx] &&
+            adapterInfo.adapterType == adapter_type_order[preferred_type_idx]) {
           return adapter;
         }
       }
@@ -119,14 +128,15 @@ wgpu::TextureFormat kDefaultPreferredTextureFormat =
 
 namespace iggpu {
 
-AppBase::AppBase(GLFWwindow* window, wgpu::Device device, wgpu::Surface surface,
-                 wgpu::Queue queue, wgpu::SwapChain swapChain, uint32_t width,
-                 uint32_t height)
+AppBase::AppBase(GLFWwindow* window, wgpu::Device device, wgpu::Adapter adapter,
+                 wgpu::Surface surface, wgpu::TextureFormat surface_format,
+                 wgpu::Queue queue, uint32_t width, uint32_t height)
     : Window(window),
+      Adapter(adapter),
       Device(device),
       Surface(surface),
+      SurfaceFormat(surface_format),
       Queue(queue),
-      SwapChain(swapChain),
       Width(width),
       Height(height) {}
 
@@ -140,6 +150,7 @@ AppBase::~AppBase() {
 }
 
 AppBase::AppBaseCreateRsl AppBase::Create(uint32_t width, uint32_t height,
+                                          wgpu::TextureFormat preferred_format,
                                           const char* window_title) {
   glfwSetErrorCallback(::glfw_error);
   if (!glfwInit()) {
@@ -210,9 +221,16 @@ AppBase::AppBaseCreateRsl AppBase::Create(uint32_t width, uint32_t height,
   feature_toggles.enabledToggleCount = enabled_toggles.size();
   feature_toggles.enabledToggles = &enabled_toggles[0];
 
-  WGPUDeviceDescriptor device_desc = {};
+  wgpu::DeviceDescriptor device_desc = {};
   device_desc.nextInChain =
-      reinterpret_cast<WGPUChainedStruct*>(&feature_toggles);
+      reinterpret_cast<wgpu::ChainedStruct*>(&feature_toggles);
+  device_desc.deviceLostCallbackInfo.mode =
+      wgpu::CallbackMode::AllowSpontaneous;
+  device_desc.deviceLostCallbackInfo.callback = ::device_lost_callback;
+  device_desc.deviceLostCallbackInfo.userdata = nullptr;
+
+  device_desc.uncapturedErrorCallbackInfo.callback = ::print_wgpu_device_error;
+  device_desc.uncapturedErrorCallbackInfo.userdata = nullptr;
 
   WGPUDevice raw_device = adapter.CreateDevice(&device_desc);
   if (!raw_device) {
@@ -220,78 +238,60 @@ AppBase::AppBaseCreateRsl AppBase::Create(uint32_t width, uint32_t height,
     return AppBaseCreateError::WGPUDeviceCreationFailed;
   }
 
-  procs_table.deviceSetUncapturedErrorCallback(
-      raw_device, ::print_wgpu_device_error, nullptr);
-  procs_table.deviceSetDeviceLostCallback(raw_device, ::device_lost_callback,
-                                          nullptr);
-  procs_table.deviceSetLoggingCallback(raw_device, ::device_log_callback,
-                                       nullptr);
-
   wgpu::Device device = wgpu::Device::Acquire(raw_device);
+  device.SetLoggingCallback(::device_log_callback, nullptr);
 
   // Queue (easy)
   wgpu::Queue queue = device.GetQueue();
 
-  // Surface and swap chain
-  auto surfaceChainedDesc =
-      wgpu::glfw::SetupWindowAndGetSurfaceDescriptor(window);
-  WGPUSurfaceDescriptor surface_desc = {};
-  surface_desc.nextInChain =
-      reinterpret_cast<WGPUChainedStruct*>(surfaceChainedDesc.get());
-  WGPUSurface raw_surface =
-      procs_table.instanceCreateSurface(instance->Get(), &surface_desc);
-  if (!raw_surface) {
+  // Surface creation (replaces old swap chain creation flow)
+  wgpu::Surface surface =
+      wgpu::glfw::CreateSurfaceForWindow(instance->Get(), window);
+  if (!surface) {
     glfwTerminate();
-    return AppBaseCreateError::WGPUSwapChainCreateFailed;
-  }
-  wgpu::Surface surface = wgpu::Surface::Acquire(raw_surface);
-
-  wgpu::SwapChainDescriptor swap_chain_desc = {};
-  swap_chain_desc.usage = wgpu::TextureUsage::RenderAttachment;
-  swap_chain_desc.format = ::kDefaultPreferredTextureFormat;
-  swap_chain_desc.width = width;
-  swap_chain_desc.height = height;
-  swap_chain_desc.presentMode = wgpu::PresentMode::Mailbox;
-  wgpu::SwapChain swap_chain =
-      device.CreateSwapChain(surface, &swap_chain_desc);
-
-  if (!swap_chain) {
-    glfwTerminate();
-    return AppBaseCreateError::WGPUSwapChainCreateFailed;
+    return AppBaseCreateError::WGPUSurfaceCreateFailed;
   }
 
-  auto rsl = std::make_unique<AppBase>(window, device, surface, queue,
-                                       swap_chain, width, height);
+  // Configure the surface
+  wgpu::SurfaceCapabilities surfaceCaps{};
+  surface.GetCapabilities(adapter.Get(), &surfaceCaps);
+
+  wgpu::TextureFormat surfaceFormat = surfaceCaps.formats[0];
+  for (size_t i = 1; i < surfaceCaps.formatCount; i++) {
+    if (surfaceCaps.formats[i] == preferred_format) {
+      surfaceFormat = surfaceCaps.formats[i];
+    }
+  }
+
+  wgpu::SurfaceConfiguration surfaceConfig = {};
+  surfaceConfig.device = device;
+  surfaceConfig.format = surfaceFormat;
+  surfaceConfig.width = width;
+  surfaceConfig.height = height;
+  surface.Configure(&surfaceConfig);
+
+  auto rsl = std::make_unique<AppBase>(
+      window, device, wgpu::Adapter::Acquire(adapter.Get()), surface,
+      surfaceFormat, queue, width, height);
   rsl->instance_ = std::move(instance);
   return std::move(rsl);
 }
 
-wgpu::TextureFormat AppBase::preferred_swap_chain_texture_format() const {
-  return ::kDefaultPreferredTextureFormat;
-}
-
-void AppBase::resize_swap_chain(uint32_t width, uint32_t height) {
+void AppBase::resize_surface(uint32_t width, uint32_t height) {
   auto surfaceChainedDesc =
       wgpu::glfw::SetupWindowAndGetSurfaceDescriptor(Window);
 
   WGPUSurfaceDescriptor desc = {};
   desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&surfaceChainedDesc);
 
-  wgpu::SwapChainDescriptor swap_chain_desc = {};
-  swap_chain_desc.usage = wgpu::TextureUsage::RenderAttachment;
-  swap_chain_desc.format = ::kDefaultPreferredTextureFormat;
-  swap_chain_desc.width = width;
-  swap_chain_desc.height = height;
-  swap_chain_desc.presentMode = wgpu::PresentMode::Mailbox;
-  wgpu::SwapChain swap_chain =
-      Device.CreateSwapChain(Surface, &swap_chain_desc);
-  SwapChain = Device.CreateSwapChain(Surface, &swap_chain_desc);
-  Width = width;
-  Height = height;
-
-  if (SwapChain == nullptr) {
-    iggpu::log(LogLevel::Error, "Failed to recreate swap chain");
-  }
+  wgpu::SurfaceCapabilities surfaceCaps{};
+  Surface.GetCapabilities(Adapter.Get(), &surfaceCaps);
+  wgpu::SurfaceConfiguration surfaceConfig = {};
+  surfaceConfig.device = Device;
+  surfaceConfig.format = SurfaceFormat;
+  surfaceConfig.width = width;
+  surfaceConfig.height = height;
+  Surface.Configure(&surfaceConfig);
 }
 
 void AppBase::process_events() {

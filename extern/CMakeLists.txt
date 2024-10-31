@@ -29,7 +29,7 @@ if (NOT TARGET igasync)
   FetchContent_Declare(
     igasync
     GIT_REPOSITORY "https://github.com/sessamekesh/igasync"
-    GIT_TAG "0c1e06bcade82f2b6e294b0e2e89e6d06a1a00d8"
+    GIT_TAG "a9d971337ffa505fc29650359eb5db13806eb82c"
   )
   FetchContent_MakeAvailable(igasync)
 endif ()
@@ -42,7 +42,7 @@ if (NOT EMSCRIPTEN)
     dawn
     GIT_REPOSITORY "https://dawn.googlesource.com/dawn/"
     GIT_SUBMODULES ""
-    GIT_TAG "4b86619504466704374f98795213587874f4b258"
+    GIT_TAG "chromium/6809"
   )
   FetchContent_GetProperties(dawn)
   if (NOT dawn_POPULATED)
