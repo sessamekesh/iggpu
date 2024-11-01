@@ -76,6 +76,15 @@ if (NOT EMSCRIPTEN)
         WORKING_DIRECTORY "${dawn_SOURCE_DIR}"
         RESULT_VARIABLE rsl_dawn_deps_update
       )
+
+      if (NOT ${rsl_dawn_deps_update} EQUAL 0)
+        execute_process(
+          COMMAND "python3" "${dawn_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"
+          WORKING_DIRECTORY "${dawn_SOURCE_DIR}"
+          RESULT_VARIABLE rsl_dawn_deps_update
+        )
+      endif ()
+
       if (NOT ${rsl_dawn_deps_update} EQUAL 0)
         message(FATAL "Failed to wrangle Dawn dependencies")
       endif ()

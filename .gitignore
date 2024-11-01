@@ -33,6 +33,10 @@
 
 # CMake build directories
 out
+cmake-build-*
 
 # Visual Studio stuff
 .vs
+
+# CLion stuff
+.idea

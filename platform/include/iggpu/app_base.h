@@ -1,7 +1,7 @@
 #ifndef IGGPU_PLATFORM_APP_BASE_H
 #define IGGPU_PLATFORM_APP_BASE_H
 
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 #include <webgpu/webgpu_cpp.h>
 
 #include <memory>

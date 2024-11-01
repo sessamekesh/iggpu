@@ -93,6 +93,9 @@ dawn::native::Adapter get_adapter(
       // TODO (sessamekesh): Prefer D3D12 support macro directly to WIN32
       wgpu::BackendType::D3D12,
 #endif
+#ifdef __APPLE__
+    wgpu::BackendType::Metal,
+#endif
       wgpu::BackendType::Vulkan,
   };
 
