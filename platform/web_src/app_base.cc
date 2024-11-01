@@ -31,14 +31,15 @@ wgpu::TextureFormat kDefaultPreferredTextureFormat =
 
 namespace iggpu {
 
-AppBase::AppBase(GLFWwindow* window, wgpu::Device device, wgpu::Surface surface,
-                 wgpu::Queue queue, wgpu::SwapChain swapChain, uint32_t width,
-                 uint32_t height)
+AppBase::AppBase(GLFWwindow* window, wgpu::Device device, wgpu::Adapter adapter,
+                 wgpu::Surface surface, wgpu::TextureFormat surface_format,
+                 wgpu::Queue queue, uint32_t width, uint32_t height)
     : Window(window),
+      Adapter(adapter),
       Device(device),
       Surface(surface),
+      SurfaceFormat(surface_format),
       Queue(queue),
-      SwapChain(swapChain),
       Width(width),
       Height(height) {}
 
@@ -52,6 +53,7 @@ AppBase::~AppBase() {
 }
 
 AppBase::AppBaseCreateRsl AppBase::Create(std::string canvas_name,
+                                          wgpu::TextureFormat preferred_format,
                                           bool prefer_high_power) {
   using promise_t = std::variant<std::unique_ptr<AppBase>, AppBaseCreateError>;
 
@@ -87,11 +89,12 @@ AppBase::AppBaseCreateRsl AppBase::Create(std::string canvas_name,
     int width;
     int height;
     wgpu::Instance instance;
+    wgpu::TextureFormat preferred_format;
   };
   RequestAdapterUserData* request_adapter_user_data =
       new RequestAdapterUserData{
-          window, result_promise, std::move(canvas_name),
-          width,  height,         instance,
+          window, result_promise, std::move(canvas_name), width,
+          height, instance,       preferred_format,
       };
 
   instance.RequestAdapter(
@@ -134,12 +137,13 @@ AppBase::AppBaseCreateRsl AppBase::Create(std::string canvas_name,
           int height;
           wgpu::Instance instance;
           wgpu::Adapter adapter;
+          wgpu::TextureFormat preferred_format;
         };
         RequestDeviceUserData* request_device_user_data =
             new RequestDeviceUserData{
-                ud->window, ud->result_promise, std::move(ud->canvas_name),
-                ud->width,  ud->height,         ud->instance,
-                adapter,
+                ud->window, ud->result_promise,   std::move(ud->canvas_name),
+                ud->width,  ud->height,           ud->instance,
+                adapter,    ud->preferred_format,
             };
         delete ud;
 
@@ -176,27 +180,29 @@ AppBase::AppBaseCreateRsl AppBase::Create(std::string canvas_name,
                   reinterpret_cast<wgpu::ChainedStruct*>(&canv_desc);
               wgpu::Surface surface = ud->instance.CreateSurface(&surface_desc);
 
-              wgpu::SwapChainDescriptor swap_desc{};
-              swap_desc.usage = wgpu::TextureUsage::RenderAttachment;
-              swap_desc.format = wgpu::TextureFormat::BGRA8Unorm;
-              swap_desc.width = ud->width;
-              swap_desc.height = ud->height;
-              swap_desc.presentMode = wgpu::PresentMode::Fifo;
-              wgpu::SwapChain swap_chain =
-                  device.CreateSwapChain(surface, &swap_desc);
+              // Configure the surface
+              wgpu::SurfaceCapabilities surfaceCaps{};
+              surface.GetCapabilities(ud->adapter.Get(), &surfaceCaps);
+
+              wgpu::TextureFormat surfaceFormat = surfaceCaps.formats[0];
+              for (size_t i = 1; i < surfaceCaps.formatCount; i++) {
+                if (surfaceCaps.formats[i] == ud->preferred_format) {
+                  surfaceFormat = surfaceCaps.formats[i];
+                }
+              }
+
+              wgpu::SurfaceConfiguration surfaceConfig = {};
+              surfaceConfig.device = device;
+              surfaceConfig.format = surfaceFormat;
+              surfaceConfig.width = ud->width;
+              surfaceConfig.height = ud->height;
+              surface.Configure(&surfaceConfig);
 
               wgpu::Queue queue = device.GetQueue();
 
-              if (!swap_chain) {
-                glfwTerminate();
-                ud->result_promise->resolve(
-                    AppBaseCreateError::WGPUSwapChainCreateFailed);
-                return;
-              }
-
-              ud->result_promise->resolve(
-                  std::make_unique<AppBase>(ud->window, device, surface, queue,
-                                            swap_chain, ud->width, ud->height));
+              ud->result_promise->resolve(std::make_unique<AppBase>(
+                  ud->window, device, ud->adapter, surface, surfaceFormat,
+                  queue, ud->width, ud->height));
 
               delete ud;
             },
@@ -207,28 +213,15 @@ AppBase::AppBaseCreateRsl AppBase::Create(std::string canvas_name,
   return result_promise;
 }
 
-wgpu::TextureFormat AppBase::preferred_swap_chain_texture_format() const {
-  return ::kDefaultPreferredTextureFormat;
-}
-
-void AppBase::resize_swap_chain(uint32_t width, uint32_t height) {
-  // SwapChain.Configure(preferred_swap_chain_texture_format(),
-  //                    wgpu::TextureUsage::RenderAttachment, width, height);
-  wgpu::SwapChainDescriptor swap_desc{};
-  swap_desc.usage = wgpu::TextureUsage::RenderAttachment;
-  swap_desc.format = wgpu::TextureFormat::BGRA8Unorm;
-  swap_desc.width = width;
-  swap_desc.height = height;
-  swap_desc.presentMode = wgpu::PresentMode::Mailbox;
-
-  SwapChain = Device.CreateSwapChain(Surface, &swap_desc);
-
-  Width = width;
-  Height = height;
-
-  if (SwapChain == nullptr) {
-    iggpu::log(LogLevel::Error, "[IGGPU] Failed to recreate swap chain");
-  }
+void AppBase::resize_surface(uint32_t width, uint32_t height) {
+  wgpu::SurfaceCapabilities surfaceCaps{};
+  Surface.GetCapabilities(Adapter.Get(), &surfaceCaps);
+  wgpu::SurfaceConfiguration surfaceConfig = {};
+  surfaceConfig.device = Device;
+  surfaceConfig.format = SurfaceFormat;
+  surfaceConfig.width = width;
+  surfaceConfig.height = height;
+  Surface.Configure(&surfaceConfig);
 }
 
 }  // namespace iggpu
